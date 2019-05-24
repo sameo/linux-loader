@@ -35,7 +35,7 @@ def _get_current_coverage():
     )
     exclude_region = "'mod tests {'"
 
-    kcov_cmd = "CARGO_TARGET_DIR={} cargo kcov --all " \
+    kcov_cmd = "CARGO_TARGET_DIR={} cargo kcov --all --features=elf,bzImage" \
                "--output {} -- " \
                "--exclude-region={} " \
                "--exclude-pattern={} " \

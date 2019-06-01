@@ -125,8 +125,8 @@ pub trait KernelLoader {
         guest_mem: &M,
         kernel_start: Option<GuestAddress>,
         kernel_image: &mut F,
-        lowest_kernel_start: Option<GuestAddress>,
-    ) -> Result<(KernelLoaderResult)>
+        highmem_start_address: Option<GuestAddress>,
+    ) -> Result<KernelLoaderResult>
     where
         F: Read + Seek;
 }
@@ -145,7 +145,7 @@ impl KernelLoader for Elf {
     /// * `guest_mem` - The guest memory region the kernel is written to.
     /// * `kernel_start` - The offset into 'guest_mem' at which to load the kernel.
     /// * `kernel_image` - Input vmlinux image.
-    /// * `lowest_kernel_start` - This is the start of the high memory, kernel should above it.
+    /// * `highmem_start_address` - This is the start of the high memory, kernel should above it.
     ///
     /// # Returns
     /// * KernelLoaderResult
@@ -153,8 +153,8 @@ impl KernelLoader for Elf {
         guest_mem: &M,
         kernel_start: Option<GuestAddress>,
         kernel_image: &mut F,
-        lowest_kernel_start: Option<GuestAddress>,
-    ) -> Result<(KernelLoaderResult)>
+        highmem_start_address: Option<GuestAddress>,
+    ) -> Result<KernelLoaderResult>
     where
         F: Read + Seek,
     {
@@ -184,8 +184,8 @@ impl KernelLoader for Elf {
         if (ehdr.e_phoff as usize) < mem::size_of::<elf::Elf64_Ehdr>() {
             return Err(Error::InvalidProgramHeaderOffset);
         }
-        if (lowest_kernel_start.is_some())
-            && ((ehdr.e_entry as u64) < lowest_kernel_start.unwrap().raw_value())
+        if (highmem_start_address.is_some())
+            && ((ehdr.e_entry as u64) < highmem_start_address.unwrap().raw_value())
         {
             return Err(Error::InvalidEntryAddress);
         }
@@ -257,7 +257,7 @@ impl KernelLoader for BzImage {
     /// * `guest_mem` - The guest memory where the kernel image is loaded.
     /// * `kernel_start` - The offset into 'guest_mem' at which to load the kernel.
     /// * `kernel_image` - Input bzImage image.
-    /// * `lowest_kernel_start` - This is the start of the high memory, kernel should above it.
+    /// * `highmem_start_address` - This is the start of the high memory, kernel should above it.
     ///
     /// # Returns
     /// * KernelLoaderResult
@@ -265,8 +265,8 @@ impl KernelLoader for BzImage {
         guest_mem: &M,
         kernel_start: Option<GuestAddress>,
         kernel_image: &mut F,
-        lowest_kernel_start: Option<GuestAddress>,
-    ) -> Result<(KernelLoaderResult)>
+        highmem_start_address: Option<GuestAddress>,
+    ) -> Result<KernelLoaderResult>
     where
         F: Read + Seek,
     {
@@ -303,8 +303,8 @@ impl KernelLoader for BzImage {
 
         // verify bzImage validation by checking if code32_start, the defaults to the address of
         // the kernel is not lower than high memory.
-        if (lowest_kernel_start.is_some())
-            && (u64::from(boot_header.code32_start) < lowest_kernel_start.unwrap().raw_value())
+        if (highmem_start_address.is_some())
+            && (u64::from(boot_header.code32_start) < highmem_start_address.unwrap().raw_value())
         {
             return Err(Error::InvalidKernelStartAddress);
         }
@@ -398,20 +398,19 @@ mod test {
     #[allow(safe_packed_borrows)]
     #[allow(non_snake_case)]
     #[test]
-    #[ignore]
     #[cfg(feature = "bzImage")]
     fn load_bzImage() {
         let gm = create_guest_mem();
         let image = make_bzImage();
         let mut kernel_start = GuestAddress(0x200000);
-        let mut lowest_kernel_start = GuestAddress(0x0);
+        let mut highmem_start_address = GuestAddress(0x0);
 
         // load bzImage with good kernel_start and himem_start setting
         let mut loader_result = BzImage::load(
             &gm,
             Some(kernel_start),
             &mut Cursor::new(&image),
-            Some(lowest_kernel_start),
+            Some(highmem_start_address),
         )
         .unwrap();
         assert_eq!(0x53726448, loader_result.setup_header.unwrap().header);
@@ -437,7 +436,7 @@ mod test {
             &gm,
             None,
             &mut Cursor::new(&image),
-            Some(lowest_kernel_start),
+            Some(highmem_start_address),
         )
         .unwrap();
         assert_eq!(0x53726448, loader_result.setup_header.unwrap().header);
@@ -456,28 +455,29 @@ mod test {
 
         // load bzImage with a bad himem setting
         kernel_start = GuestAddress(0x1000);
-        lowest_kernel_start = GuestAddress(0x200000);
+        highmem_start_address = GuestAddress(0x200000);
         let x = BzImage::load(
             &gm,
             Some(kernel_start),
             &mut Cursor::new(&image),
-            Some(lowest_kernel_start),
+            Some(highmem_start_address),
         );
         assert_eq!(x.is_ok(), false);
         println!("load bzImage with bad himem setting \n");
     }
 
     #[test]
+    #[cfg(feature = "elf")]
     fn load_elf() {
         let gm = create_guest_mem();
         let image = make_elf_bin();
         let kernel_addr = GuestAddress(0x200000);
-        let mut lowest_kernel_start = GuestAddress(0x0);
+        let mut highmem_start_address = GuestAddress(0x0);
         let mut loader_result = Elf::load(
             &gm,
             Some(kernel_addr),
             &mut Cursor::new(&image),
-            Some(lowest_kernel_start),
+            Some(highmem_start_address),
         )
         .unwrap();
         println!(
@@ -495,7 +495,7 @@ mod test {
             &gm,
             None,
             &mut Cursor::new(&image),
-            Some(lowest_kernel_start),
+            Some(highmem_start_address),
         )
         .unwrap();
         println!(
@@ -503,14 +503,14 @@ mod test {
             loader_result.kernel_load.raw_value()
         );
 
-        lowest_kernel_start = GuestAddress(0xa00000);
+        highmem_start_address = GuestAddress(0xa00000);
         assert_eq!(
             Err(Error::InvalidEntryAddress),
             Elf::load(
                 &gm,
                 None,
                 &mut Cursor::new(&image),
-                Some(lowest_kernel_start)
+                Some(highmem_start_address)
             )
         );
     }

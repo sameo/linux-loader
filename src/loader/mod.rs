@@ -384,7 +384,7 @@ mod test {
     #[cfg(feature = "bzImage")]
     fn make_bzImage() -> Vec<u8> {
         let mut v = Vec::new();
-        v.extend_from_slice(include_bytes!("bzImage"));
+        v.extend_from_slice(include_bytes!("bzimage"));
         v
     }
 

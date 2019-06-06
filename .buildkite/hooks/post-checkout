@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -x
+
 DEB_NAME="linux-image-4.9.0-9-amd64_4.9.168-1_amd64.deb"
 DEB_URL="http://ftp.debian.org/debian/pool/main/l/linux/${DEB_NAME}"
 
